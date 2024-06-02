@@ -1,0 +1,8 @@
+Backend/__pycache__
+myenv
+Backend/files
+Backend/.env
+.env
+.DS_Store
+momVenv
+Backend/output

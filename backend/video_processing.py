@@ -5,9 +5,17 @@ import google.generativeai as genai
 import os
 from pydub import AudioSegment
 import spacy
+from config import settings
 
-def final(video_path):
-    genai.configure(api_key=os.environ.get("GOOGLE_API_KEY"))
+def final(video_id):
+    # check already present or not
+    if os.path.exists(f"videos/{video_id}.mp4"):
+        print("Video Already Present")
+        return {"shorts":os.listdir(f"output/{video_id}")}
+    
+    video_path = f"videos/{video_id}.mp4"
+    print("Processing Video")
+    genai.configure(api_key=settings.GOOGLE_API_KEY)
     model = genai.GenerativeModel('gemini-1.0-pro-latest')
 
     generation_config = {
@@ -48,7 +56,7 @@ def final(video_path):
 
     base_url = "https://api.assemblyai.com/v2"
     headers = {
-        "authorization": os.environ.get("ASSEMBLY_API_KEY")
+        "authorization": settings.ASSEMBLYAI_API_KEY
     }
     with open("output_audio.wav", "rb") as f:
         response = requests.post(base_url + "/upload",
@@ -181,3 +189,4 @@ def final(video_path):
         trim_and_speedup_video(video_path, output_folder, start_time, end_time)
 
     print("All video clips trimmed and sped up successfully!")
+    return {"shorts":os.listdir(f"output/{video_id}")}

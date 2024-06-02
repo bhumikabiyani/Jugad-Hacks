@@ -13,6 +13,7 @@ import json
 from utils import summarize,transcribe
 from db import database
 import boto3
+from video_processing import final
 
 s3 = boto3.resource('s3')
 bucket = s3.Bucket('mom-audios')
@@ -86,9 +87,11 @@ def getSummary(meeting_id:str,email: str = Depends(get_current_user_email)):
 async def read_item(request: Request, video_id: str):
     # streaming audio from s3 bucket
     try:
-        obj = bucket.Object(video_id)
-        response = obj.get()
-        audio = response['Body'].read()
+        with open(f"videos/{video_id}.mp4", "rb") as f:
+            audio = f.read()
+        # obj = bucket.Object(video_id)
+        # response = obj.get()
+        # audio = response['Body'].read()
         start, end = 0, len(audio) - 1
         if "range" in request.headers:
             byte_pos = request.headers["range"].replace("bytes=", "").split("-")
@@ -118,7 +121,9 @@ async def create_upload_file(file: UploadFile = UploadFile(...) ,email: str = De
 
     meeting_id = generate_random_id()
     database.add_meeting_id(meeting_id=meeting_id,email=email)
-    await s3Upload(contents, meeting_id)
+    with open(f"videos/{meeting_id}.mp4", "wb") as f:
+        f.write(contents)
+    # await s3Upload(contents, meeting_id)
     print("File uploaded successfully")
     return {"video_id": meeting_id}
 
@@ -130,13 +135,32 @@ async def share_meeting(meeting_id:str,share:bool,email: str = Depends(get_curre
     database.update_meeting_share_status(meeting_id,share)
     return {"message":"Meeting shared successfully","is_shared":share}
 
+@app.get("/gen_shorts/{meeting_id}")
+async def gen_shorts(meeting_id:str,email: str = Depends(get_current_user_email)):
+    print("Got shorts req",meeting_id,email)
+    if database.verify_meeting_id(meeting_id,email):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found") 
+    path_list=final(meeting_id)['shorts']
+    print(path_list)
+    return {"shorts":path_list}
 
-
-async def s3Upload(contents: bytes, meeting_id: str):
+@app.get("/stream_shorts/{meeting_id}/{short_id}")
+async def stream_shorts(request: Request,meeting_id:str,short_id:str):
+    print("Got shorts req",meeting_id,short_id)
     try:
-        bucket.put_object(Key=meeting_id, Body=contents)
+        with open(f"output/{meeting_id}/{short_id}", "rb") as f:
+            audio = f.read()
+        start, end = 0, len(audio) - 1
+        if "range" in request.headers:
+            byte_pos = request.headers["range"].replace("bytes=", "").split("-")
+            start = int(byte_pos[0])
+            end = int(byte_pos[1]) if len(byte_pos) > 1 and byte_pos[1] else len(audio) - 1
+        def content():
+            yield audio[start:end+1]
+        response = StreamingResponse(content(), media_type="audio/mp3")
+        response.headers["Content-Range"] = f"bytes {start}-{end}/{len(audio)}"
+        response.status_code = 206
+        return response
     except Exception as e:
         print(f"Error processing and uploading file: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error processing and uploading file")
-
- 
